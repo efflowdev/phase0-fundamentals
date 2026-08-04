@@ -26,7 +26,7 @@ async def stream_groq(messages: list[dict]) -> AsyncIterator[str]:
         "Content-Type": "application/json",
     }
 
-    def _content_from(payload: str) -> str | None:
+    def _content_from(item: str) -> str | None:
         if item == "[DONE]":
             return
         try:
@@ -35,8 +35,6 @@ async def stream_groq(messages: list[dict]) -> AsyncIterator[str]:
             return
         delta = data.get("choices", [{}])[0].get("delta", {})
         content = delta.get("content")
-        if isinstance(content, str) and content:
-            yield content
 
         return content
 
