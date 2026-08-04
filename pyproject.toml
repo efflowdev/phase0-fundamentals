@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Phase 0 fundamentals exercises and tooling"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "httpx>=0.28.1",
     "tiktoken>=0.13.0",
 ]
 
