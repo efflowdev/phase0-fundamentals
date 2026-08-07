@@ -1,0 +1,15 @@
+{
+  "name": "day2-client-ts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "tsx client.ts",
+    "test": "tsx --test sse.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
