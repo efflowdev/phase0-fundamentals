@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Phase 0 fundamentals exercises and tooling"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "fastembed>=0.8.0",
     "httpx>=0.28.1",
+    "numpy>=2.5.1",
     "tiktoken>=0.13.0",
 ]
 

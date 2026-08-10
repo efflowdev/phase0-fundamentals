@@ -5,3 +5,8 @@ __pycache__/
 .venv/
 .env
 node_modules/
+
+# SQLite sidecars. runs.db itself is deliberately not ignored — it is the
+# experiment data, and lens reads it on Monday.
+*.db-wal
+*.db-shm
