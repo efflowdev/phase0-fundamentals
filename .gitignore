@@ -10,3 +10,6 @@ node_modules/
 # experiment data, and lens reads it on Monday.
 *.db-wal
 *.db-shm
+
+# Derived: rebuilt from the committed cache in ~12s by evaluate.py
+day4_search/index/

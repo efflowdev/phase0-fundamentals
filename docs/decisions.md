@@ -110,3 +110,90 @@ Five lines per decision: context, options considered, choice, why, what would ch
   handed to a caller until the response is complete.
 - **What would change my mind.** Needing time-to-first-token as a metric, which only the streaming
   path can measure.
+
+---
+
+## Corpus is sampled in blocks spread across ESCI, not the first N rows
+
+- **Context.** 500 products are needed out of a 2-million-row dataset, pulled through a paging API.
+- **Options.** Take the first 4000 rows; sample blocks from evenly spaced offsets; sample rows at
+  random.
+- **Choice.** Sixteen contiguous blocks of 400 rows, spread evenly, with the first and last query
+  group in each block discarded.
+- **Why.** ESCI is ordered by query, so any contiguous prefix is a handful of adjacent topics — the
+  first attempt produced a catalogue of bathroom fans and children's books. A corpus of near
+  duplicates makes every retriever look bad for reasons unrelated to retrieval, and it fails the
+  "corpus you can judge by eye" test the whole exercise depends on. Blocks rather than single rows
+  because query groups must stay intact; the edge groups are dropped because a block boundary almost
+  certainly cut them in half, and a half-judged query silently caps its own recall.
+- **What would change my mind.** Needing a specific product category, at which point filtering beats
+  sampling — but then the corpus stops being representative and the numbers stop transferring.
+
+---
+
+## Query groups are skipped whole, never truncated
+
+- **Context.** The 500-product cap will land mid-group for whichever query crosses it.
+- **Options.** Truncate the group and keep the query; drop the query; raise the cap to fit.
+- **Choice.** Skip the whole group and continue to the next one.
+- **Why.** A truncated group means some of a query's judged products are absent from the index, so
+  its recall is capped by the loader rather than by the retriever. Every recall number in the table
+  would then be partly a measurement of `corpus.build`, and biased downward by an amount that varies
+  per query.
+- **What would change my mind.** Nothing at this size. At a corpus where whole-group packing wastes
+  significant space, the fix is to record each query's achievable ceiling rather than to truncate.
+
+---
+
+## The SKU is inside the indexed document text
+
+- **Context.** The identifier experiment asks whether dense retrieval can find a product by its code.
+- **Options.** Index title only, and query codes that appear nowhere; index title plus a SKU line.
+- **Choice.** Every document carries `SKU: <asin>` in its indexed text.
+- **Why.** If the code were absent, both retrievers would fail and the comparison would prove
+  nothing. With it present, the information is genuinely retrievable and BM25 finds it 500 times out
+  of 500 — so dense missing it 497 times is a property of the embedding, not of the data. Real
+  catalogue search fields carry the SKU anyway.
+- **What would change my mind.** Nothing for this experiment. Worth noting that adding a rare token
+  to all 500 documents perturbs their embeddings slightly, which is a small cost paid for a clean
+  comparison.
+
+---
+
+## Ranking uses argpartition, not argsort
+
+- **Context.** Scoring produces one float per document; the caller wants the best ten.
+- **Options.** `argsort` the whole score vector; `argpartition` for the top k, then sort those k.
+- **Choice.** `argpartition`, then sort the k.
+- **Why.** `argsort` is O(n log n) over the entire corpus to return ten rows, `argpartition` is O(n)
+  quickselect. Invisible at 500 documents; at a million it measured 86 ms against 7.6 ms, which would
+  have more than doubled query latency.
+- **What would change my mind.** Needing the full ranking rather than a top-k — pagination deep into
+  results, or a reranker that consumes several hundred candidates.
+
+---
+
+## Metrics are reported against their achievable ceiling
+
+- **Context.** Queries have 8.7 relevant products on average, and k is 1 or 10.
+- **Options.** Report recall@k raw; report only hit@k and MRR; report recall@k alongside its ceiling.
+- **Choice.** Add `r@10 max` and `% of max` columns computed from the relevant-set sizes.
+- **Why.** Recall@1 cannot exceed 1/8.7 here, and recall@10 cannot exceed 0.930 on this query set, so
+  quoting either as a fraction of 100% understates the retriever by an amount that has nothing to do
+  with the retriever. This is the most common error in eval write-ups and it always points the same
+  way — it makes working systems look broken.
+- **What would change my mind.** A query set with exactly one relevant document per query, where the
+  ceiling is 1.0 and the column is noise. The identifier query set is exactly that case.
+
+---
+
+## The catalogue lives in its own SQLite file, not day 3's
+
+- **Context.** Day 3 established `runs.db` as the phase-0 database, and `lens` will read it.
+- **Options.** Add a `documents` table to `runs.db`; keep a separate `day4_search/index/catalog.db`.
+- **Choice.** Separate file.
+- **Why.** `runs.db` holds model calls — one row per request, with logprobs and latency. A product
+  catalogue is a different entity with a different lifecycle, and mixing them means `lens` has to
+  know which tables to ignore.
+- **What would change my mind.** P1, where traces and the documents they retrieved genuinely need
+  joining. At that point one database with a foreign key beats two files.
