@@ -197,3 +197,89 @@ Five lines per decision: context, options considered, choice, why, what would ch
   know which tables to ignore.
 - **What would change my mind.** P1, where traces and the documents they retrieved genuinely need
   joining. At that point one database with a foreign key beats two files.
+
+---
+
+## The repo became an installable package
+
+- **Context.** Day 3 and day 5 both need the concurrency runner, and until now every script imported
+  its neighbours by accident of `sys.path[0]` holding its own directory.
+- **Options.** Copy the runner into both days; manipulate `sys.path`; make the project installable
+  and import it properly.
+- **Choice.** A hatchling build target over a single `phase0/` package, installed editable by
+  `uv sync`. Each `dayN/` directory stays a set of scripts.
+- **Why.** Two copies drift, and the one that drifts is always the one you are not looking at. The
+  `sys.path` version works and is embarrassing to explain. Editable install is what the tooling is
+  for, and the split it forces — `phase0/` is a library, `dayN/` are exercises — is the useful part.
+- **What would change my mind.** Nothing here. The mistake was leaving it until day 5; it should
+  have happened the first time two days shared anything.
+
+---
+
+## The runner checkpoints to JSONL, while day 3 keeps SQLite
+
+- **Context.** Both need resumability, but the runner is generic and day 3's store is not.
+- **Options.** One store for both; JSONL in the runner and SQLite in the days that want queries.
+- **Choice.** Append-only JSONL in the runner, `checkpoint=None` when day 3 calls it.
+- **Why.** A generic runner must not know the shape of what it is running — day 3's SQLite resume key
+  is an eight-column tuple, which is right for day 3 and useless to anything else. Append-only also
+  means a crash costs one line, and a torn final line is skipped rather than fatal. Passing
+  `checkpoint=None` is what proves the abstraction composes instead of being all-or-nothing.
+- **What would change my mind.** Needing cross-run queries during a run rather than after it, which
+  would justify the write-ahead-log-plus-database shape real labelling pipelines use.
+
+---
+
+## Resume retries failures but never re-runs successes
+
+- **Context.** A resumed run has to decide what a previously recorded failure means.
+- **Options.** Skip everything already recorded; retry everything; retry only failures.
+- **Choice.** Retry failures, skip successes, with `retry_failed=False` available for the other case.
+- **Why.** The usual cause of a failure is a rate limit or a timeout and the usual fix is running it
+  again, so treating failures as final means manually re-driving them. Successes are never worth
+  re-paying for.
+- **What would change my mind.** A deterministic failure — a malformed input that will fail every
+  time — where retrying is pure cost. That is what the flag is for.
+
+---
+
+## The schema raises on bad input instead of repairing it
+
+- **Context.** Models answer optional fields with `"unknown"`. The validator could coerce that to
+  `None`.
+- **Options.** Coerce and move on; raise and record.
+- **Choice.** Raise. `mode="before"` turns `""` into `None`, but a placeholder word is a violation.
+- **Why.** Coercion would make Saturday's violation-rate table measure the validator rather than the
+  model, and it would report a beautiful 0% while the model was ignoring the contract. A repair loop
+  is allowed to fix things; a schema is not. The two roles have to stay separate or the measurement
+  is meaningless.
+- **What would change my mind.** Production, where the goal is a filled database rather than a
+  measurement — there, coerce, but count what you coerced.
+
+---
+
+## The benchmark has a fake arm
+
+- **Context.** Measuring whether raising concurrency helps.
+- **Options.** Time the real calls at each level; add a second arm with no external dependency.
+- **Choice.** Both — `asyncio.sleep` alongside real Ollama calls.
+- **Why.** "2.6× at concurrency 8" is ambiguous on its own: a saturated server and a badly written
+  harness look identical. The fake arm holding 100% efficiency to 32 is what licenses blaming the
+  server. Reach for this shape whenever benchmarking anything with a remote dependency.
+- **What would change my mind.** Nothing. It cost twenty lines and it is the difference between a
+  number and a conclusion.
+
+---
+
+## Errors are classified by every violation, not the first
+
+- **Context.** A response can break the schema in several ways at once, and Pydantic reports them all.
+- **Options.** Take `errors()[0]`; record the whole set.
+- **Choice.** The whole set, matched on distinctive substrings, most specific first.
+- **Why.** Taking the first error under-counted, and worse, the two validators that both say "use
+  null" collided: matching the shared phrase first filed all 22 empty-`dimensions` errors as
+  placeholder errors, reporting a whole failure mode as zero across three runs. There is a regression
+  test pinning the two messages apart now.
+- **What would change my mind.** Matching on message substrings is fragile regardless. Pydantic's
+  `ctx` and a custom error code per validator would be sturdier, and is the right fix if this
+  classifier grows past a handful of rules.

@@ -49,6 +49,8 @@ from config import (
 from sample import Sample, complete, probe_logprobs
 from score import tokens_to_json
 
+from phase0.runner import run_all
+
 
 def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
@@ -97,10 +99,23 @@ async def run_group(
     indices: list[int],
     sampler: dict[str, object] | None,
 ) -> tuple[int, int]:
-    """One cell of the matrix. Returns (completed, failed)."""
+    """One cell of the matrix. Returns (completed, failed).
 
-    async def one(run_idx: int) -> tuple[int, Sample]:
-        result = await complete(
+    Dispatch is now just a concurrency number: sequential is a semaphore of one.
+    A `gather` behind `Semaphore(1)` creates every task up front but keeps a
+    single request in flight, which is the property the determinism experiment
+    actually cares about — so the two arms still differ in exactly the way the
+    day 3 write-up claims.
+
+    The runner supplies concurrency and failure capture only. Persistence and
+    resume stay on SQLite here, because `runs.db` is the committed evidence and
+    what `lens` reads; passing `checkpoint=None` is what makes the runner
+    composable rather than all-or-nothing.
+    """
+    concurrency = 1 if dispatch == "sequential" else provider.max_concurrency
+
+    async def one(run_idx: int) -> Sample:
+        return await complete(
             client,
             provider,
             prompt.text,
@@ -109,33 +124,37 @@ async def run_group(
             max_tokens=prompt.max_tokens,
             sampler=sampler,
         )
-        return run_idx, result
+
+    outcomes = await run_all(
+        indices,
+        one,
+        key=str,
+        concurrency=concurrency,
+        checkpoint=None,
+        progress=False,
+    )
 
     results: list[tuple[int, Sample]] = []
-    if dispatch == "sequential":
-        for run_idx in indices:
-            results.append(await one(run_idx))
-    else:
-        # The day 5 shape, pulled forward because this day needs it: bounded
-        # concurrency, and results collected even when some calls fail.
-        semaphore = asyncio.Semaphore(min(provider.max_concurrency, len(indices)))
-
-        async def guarded(run_idx: int) -> tuple[int, Sample]:
-            async with semaphore:
-                return await one(run_idx)
-
-        gathered = await asyncio.gather(
-            *(guarded(i) for i in indices), return_exceptions=True
-        )
-        for run_idx, outcome in zip(indices, gathered, strict=True):
-            if isinstance(outcome, BaseException):
-                # `complete` returns errors rather than raising, so anything
-                # arriving here is a bug in the harness, not a bad response.
-                results.append(
-                    (run_idx, Sample("", "", 0, 0, 0.0, None, f"harness: {outcome!r}"))
+    for run_idx, outcome in zip(indices, outcomes, strict=True):
+        if outcome.ok and isinstance(outcome.value, Sample):
+            results.append((run_idx, outcome.value))
+        else:
+            # `complete` returns errors rather than raising, so an exception
+            # reaching here is a bug in the harness, not a bad response.
+            results.append(
+                (
+                    run_idx,
+                    Sample(
+                        "",
+                        "",
+                        0,
+                        0,
+                        outcome.elapsed_ms,
+                        None,
+                        f"harness: {outcome.error}",
+                    ),
                 )
-            else:
-                results.append(outcome)
+            )
 
     failed = 0
     for run_idx, result in results:
