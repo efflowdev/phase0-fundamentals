@@ -1,0 +1,44 @@
+{
+  "llama3.2:3b": {
+    "prompt": {
+      "supported": true,
+      "reason": ""
+    },
+    "tool": {
+      "supported": true,
+      "reason": ""
+    },
+    "native": {
+      "supported": true,
+      "reason": ""
+    }
+  },
+  "gemma3:4b": {
+    "prompt": {
+      "supported": true,
+      "reason": ""
+    },
+    "tool": {
+      "supported": false,
+      "reason": "{\"error\":\"registry.ollama.ai/library/gemma3:4b does not support tools\"}"
+    },
+    "native": {
+      "supported": true,
+      "reason": ""
+    }
+  },
+  "groq/llama-3.3-70b": {
+    "prompt": {
+      "supported": true,
+      "reason": ""
+    },
+    "tool": {
+      "supported": true,
+      "reason": ""
+    },
+    "native": {
+      "supported": true,
+      "reason": ""
+    }
+  }
+}

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from schema import Category, Dimensions, ProductAttributes
+
+from phase0.schema import Category, Dimensions, ProductAttributes
 
 
 def valid(**overrides):

@@ -16,10 +16,11 @@ import sqlite3
 from collections import defaultdict
 
 import numpy as np
-import store
 import variance as var
 from config import DEFAULT_DB, EXPERIMENT
 from score import Confidence, score, tokens_from_json
+
+from phase0 import store
 
 
 def table(headers: list[str], rows: list[list[str]], markdown: bool) -> str:

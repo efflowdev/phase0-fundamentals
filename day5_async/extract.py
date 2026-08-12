@@ -24,10 +24,10 @@ from pathlib import Path
 
 import httpx
 from pydantic import ValidationError
-from schema import ProductAttributes
 
 from phase0.ollama import MODEL, chat
 from phase0.runner import run_all, summarize
+from phase0.schema import ProductAttributes
 
 CACHE = (
     Path(__file__).resolve().parents[1] / "day4_search" / "cache" / "esci_rows.jsonl"

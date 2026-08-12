@@ -348,3 +348,240 @@ Five lines per decision: context, options considered, choice, why, what would ch
   second architecture — a cost paid on every cross-arch build for convenience not yet needed.
 - **What would change my mind.** P1, where batch upserts of 500k vectors want the client's batching
   and retry behaviour rather than a hand-rolled version of it.
+
+---
+
+## The grid varies products, not repetitions
+
+- **Context.** The spec says "3 models x 3 prompt styles x 100 runs". "100 runs" is ambiguous
+  between 100 samples of one product and one sample each of 100 products.
+- **Options.** One product sampled 100 times; 100 distinct products once each; 20 products x 5.
+- **Choice.** 100 distinct products, one call each, and the *same* 100 products in every cell.
+- **Why.** At temperature 0 the repeated-sampling version collapses — most cells return the same
+  answer 100 times, so every cell reads 0% or 100% and the table has no dynamic range. A rate over
+  distinct inputs is a number that generalises and carries a binomial confidence interval. Holding
+  the product set fixed across cells makes the model and style comparisons paired rather than
+  independent, which is free precision: any difference between two cells cannot be the products.
+- **What would change my mind.** A question about output stability rather than schema compliance —
+  "does this model answer the same way twice" is day 3's question, and it needs the other design.
+
+---
+
+## A violation is a violation whether or not a schema could express it
+
+- **Context.** A response can be perfect JSON of exactly the right shape and still say footwear with
+  no size, `"colour": "unknown"`, or a dimensions object whose every measurement is null.
+- **Options.** Headline on "matches the schema shape", with semantics in a separate column; headline
+  on "valid document", meaning parses *and* matches *and* satisfies the cross-field rules.
+- **Choice.** Valid document. All three layers must pass to count.
+- **Why.** The shape-only definition is the one vendors report, and it is the definition under which
+  constrained decoding looks perfect. Counting the semantic failures is what makes the ceiling
+  visible: a grammar enforces exactly the JSON-Schema-expressible subset of the contract, so under
+  the stricter definition the native column stops improving and the remaining failures concentrate
+  in rules no grammar can state. That is the finding; the looser definition hides it.
+- **What would change my mind.** A consumer that only needs the shape — if downstream code treats
+  `"unknown"` and `null` identically, the semantic rules are not part of the contract and should not
+  be in the model.
+
+---
+
+## The repair loop is measured against a no-feedback control
+
+- **Context.** The loop is validate, feed the errors back, retry twice. The natural metric is "the
+  repair loop recovered X% of failures".
+- **Options.** Report the recovery rate alone; run a second arm that retries without showing the
+  errors and report both.
+- **Choice.** Two arms. Both start from the same failed first attempt; one sees the validation
+  errors, the other only sees the original prompt again.
+- **Why.** A second attempt recovers some failures on its own, so the recovery rate alone cannot
+  distinguish "the error text worked" from "another sample worked". Without the control, a repair
+  loop with the feedback silently disconnected would still report a plausible number — and it would
+  be the same number. The control costs roughly a third more calls and is the only thing that makes
+  the headline attributable.
+- **What would change my mind.** Nothing about this experiment. In production the control is waste;
+  it exists to justify the strategy once, not to run alongside it forever.
+
+---
+
+## Retries resample, and the first attempt does not
+
+- **Context.** Both arms retry at seeds 43 and 44 while the first attempt uses seed 42.
+- **Options.** Everything at temperature 0, varying only the seed; retries at a temperature that
+  actually samples; the control at a different temperature from the repair arm.
+- **Choice.** First attempt at temperature 0, every retry in *both* arms at 0.7.
+- **Why.** Temperature 0 is greedy decoding and greedy decoding ignores the seed. Measured on this
+  machine: llama3.2 at temperature 0 returns 1 distinct output across seeds 42/43/44, and 3 distinct
+  outputs at 0.7. So the seed-only control was 0% by construction — it proved the feedback effective
+  no matter what the feedback contained, which is the exact failure the control was added to
+  prevent. Groq returned 2 of 3 distinct at temperature 0, so the cloud control was measuring
+  incidental non-determinism rather than a controlled resample. The first attempt stays greedy
+  because tables 1 and 2 are a deterministic measurement of the mechanisms; only the arms need heat,
+  and they need the same heat or the comparison becomes feedback-and-sampling against sampling.
+- **What would change my mind.** A provider whose temperature 0 is genuinely stochastic across
+  seeds, where the resample is real without raising the temperature.
+
+---
+
+## Violations are classified by error location, not by message text
+
+- **Context.** Every custom validator raises `ValueError`, so Pydantic reports them all as
+  `value_error` and something has to tell them apart.
+- **Options.** Match substrings of the validator messages, as day 5 does; key on the `(loc, type)`
+  pair Pydantic attaches to each error.
+- **Choice.** `(loc, type)`. No message is ever read.
+- **Why.** Day 5's own docstring records what substring matching cost: the placeholder rule and the
+  empty-dimensions rule both say "use null", the shorter phrase was tested first, and 22
+  nested-object failures were filed as placeholder failures — a whole failure mode reported as zero.
+  Probing the real model shows `(loc, type)` is fully determining: `('asin',)`, `('colour',)`,
+  `('dimensions',)` and `()` each identify exactly one rule. Rewording a validator can no longer
+  re-bucket anything.
+- **What would change my mind.** Two custom validators on the same field, which would put two rules
+  at one `loc` and force a tiebreak. The honest fix then is `PydanticCustomError` with an explicit
+  code, not a return to reading messages.
+
+---
+
+## Prose-wrapped JSON is salvaged for analysis and counted as a violation
+
+- **Context.** Small models answer "Here you go:" and then a fenced code block. Strictly that does
+  not parse.
+- **Options.** Strict `json.loads` only; strip fences silently and forgive it; strip fences and count
+  it.
+- **Choice.** Salvage from the first `{` to the last `}`, record `json_in_prose` as a violation, and
+  give it its own row in the report.
+- **Why.** Strictness would measure the harness — every prose-wrapped response becomes one opaque
+  failure and nothing inside it is ever examined, so the prompt column turns into a single number
+  with no breakdown. Forgiveness would measure a different contract than the one the system prompt
+  states. Doing both separates "cannot follow the schema" from "cannot stop saying hello", which
+  need different fixes. Truncated JSON is deliberately *not* repaired: a response cut off by
+  `num_predict` is a length failure, and inventing a closing brace would relabel it as a violation
+  of whichever field happened to be missing.
+- **What would change my mind.** A production consumer that already strips fences, in which case
+  `json_in_prose` is a cosmetic property of the transport and does not belong in the headline.
+
+---
+
+## Capabilities are probed at startup, not declared in config
+
+- **Context.** The grid assumes nine cells. `gemma3:4b` answers `tools` with HTTP 400, "does not
+  support tools".
+- **Options.** Hard-code the supported combinations; drop the tool style entirely so the grid stays
+  square; probe each cell with one throwaway call before the run.
+- **Choice.** Probe, and write the result to `capabilities.json` with the provider's own error text.
+- **Why.** Which enforcement mechanisms a model offers is a result, not configuration — it belongs
+  in the output next to the numbers rather than in a comment that ages badly the day Ollama ships a
+  tool template for Gemma. It also lets the report print *why* a cell is empty instead of a blank.
+  Only transport-level refusals count as unsupported: a model that accepts `tools` and then answers
+  in prose is supported and bad at it, which is data.
+- **What would change my mind.** A provider charging for the probe calls, at which point the
+  capability map wants caching with an explicit refresh rather than a probe per run.
+
+---
+
+## The native column is three different guarantees under one heading
+
+- **Context.** "Native structured output" is the third style. Each provider means something
+  different by it.
+- **Options.** Report one native column; drop the providers that differ; report the column with the
+  guarantee attached per target.
+- **Choice.** Keep the column, attach the guarantee. Ollama sends `format=<the whole schema>`, which
+  constrains the sampler to the grammar. Groq's `llama-3.3-70b-versatile` answers `json_schema` with
+  a 400 and supports only `response_format: json_object`, which guarantees the bytes parse and says
+  nothing about the document.
+- **Why.** Averaging a grammar-constrained cell with a JSON-mode cell produces a number for a
+  mechanism that does not exist, which is day 6's image-size mistake in a new place — two honest
+  measurements of different things, reported as one. `openai/gpt-oss-20b` is the inverse case and
+  makes the point sharper: it accepts `json_schema` and *fails* a forced `tool_choice` with "model
+  did not call a tool". No model on this key supports both, so the cloud arm cannot be chosen to
+  make the columns comparable.
+- **What would change my mind.** Groq enabling `json_schema` on the 70b, which would make the two
+  native cells the same mechanism and the footnote unnecessary.
+
+---
+
+## Ollama runs at concurrency 1, and the reason is a measurement
+
+- **Context.** The runner takes a concurrency cap per target. Day 5's shape suggests 8.
+- **Options.** Match the provider's documented parallelism; tune for throughput; set it to 1.
+- **Choice.** 1 for both Ollama targets, 4 for Groq.
+- **Why.** Measured here, warm model, same prompt: gemma3 does 28.0 tok/s aggregate at concurrency 1
+  and 32.1 at 4, while per-call p50 goes from 2287 ms to 6069 ms; llama3.2 does 37.2 against 43.4,
+  with p50 from 3517 ms to 9074 ms. One daemon and one GPU means the requests are effectively
+  serialised — four in flight buy 15% aggregate throughput and each waits three times longer. That
+  wait lands in `latency_ms`, so table 4 would have reported the number of workers this script
+  chose, labelled as how long the model takes. 15% of the wall clock is a fair price for a latency
+  column that means what it says. Groq keeps 4 because those are independent server-side workers.
+- **What would change my mind.** `OLLAMA_NUM_PARALLEL` set high on a machine with the memory to
+  honour it, where the parallelism would be real and the measurement would have to be redone.
+
+---
+
+## One database row per dispatch, not per attempt
+
+- **Context.** A failed episode can make five calls: one first try, up to two repairs, up to two
+  controls. The unique index in `phase0.store` has no `attempt` column.
+- **Options.** Add `attempt` to the index and migrate day 3; write one row per attempt into a new
+  table; write one row per dispatch and put the trail in `extra_json`.
+- **Choice.** Three rows at most — `first`, `repair`, `control` — with the per-attempt trail as JSON
+  in `extra`.
+- **Why.** This is what `store.py` reserved `extra_json` for, so `valid_first_try`, `attempts` and
+  `error_type` land without a migration and day 3's rows keep working. Two repair attempts on one
+  cell would otherwise collide under `INSERT OR REPLACE` and the second would silently overwrite the
+  first. The row is the episode; the attempts are its detail.
+- **What would change my mind.** Wanting to query across attempts — "how often does attempt 2 fix
+  what attempt 1 did not" is answerable from the trail only by unpacking JSON in Python, and if that
+  question becomes routine the attempts want their own table.
+
+---
+
+## The tool-call repair turn is provider-shaped in both directions
+
+- **Context.** Repairing a tool-style failure means replaying the model's own call and answering it.
+- **Options.** One transcript shape for both providers; separate shapes per provider.
+- **Choice.** Separate. Ollama takes `arguments` as a decoded object and a `tool` message carrying
+  `tool_name`; OpenAI-compatible APIs take `arguments` as a string and a `tool` message carrying
+  `tool_call_id`.
+- **Why.** Sending Ollama the string produces HTTP 400, "Value looks like object, but can't find
+  closing '}' symbol" — a parse error describing a string that parses perfectly well, and it killed
+  three episodes on the first smoke run. `parse_reply` already normalises the inbound direction to a
+  string so the classifier sees one type; `repair_turns` has to denormalise on the way back, and the
+  two must stay in step. A repair is also not "the errors appended as a user turn": a function call
+  is answered by a tool result, and OpenAI rejects an assistant message with `tool_calls` that is
+  not followed by a matching `tool` message.
+- **What would change my mind.** Nothing on these two providers. A third provider means a third
+  branch, and at that point the shapes want a small adapter per provider rather than two
+  `if provider ==` tests.
+
+---
+
+## `store.py` and `schema.py` moved into the `phase0` package
+
+- **Context.** The weekend needs day 3's SQLite schema and day 5's Pydantic model. Both live in day
+  directories, which are scripts on `sys.path[0]` rather than importable modules.
+- **Options.** `sys.path` manipulation from the weekend; copy the files; move them into `phase0`.
+- **Choice.** Move. Day 3 and day 5 import them from `phase0` now, and neither file changed.
+- **Why.** The same move `runner.py` made on day 5, for the same reason: the second caller is what
+  turns a script into a module. Copying would fork the schema the first time a validator changes,
+  and the whole point of the weekend's table is that it validates against the model day 5 built.
+- **What would change my mind.** `phase0` accumulating domain objects that are not infrastructure —
+  `ProductAttributes` is already a borderline case, and P1 wanting a different product schema would
+  argue for a `phase0/domain/` split rather than a flat package.
+
+---
+
+## `weekend_structured` is a package, and days 1-6 are not
+
+- **Context.** `day3_sampling/config.py` and `weekend_structured/config.py` are both placed on
+  `sys.path` by pytest. `import config` resolved to whichever directory was collected first.
+- **Options.** Rename this directory's `config.py`; make the directory a package; convert every day
+  to a package.
+- **Choice.** Package, with `-m` invocation: `uv run python -m weekend_structured.run`.
+- **Why.** The whole weekend failed to import under `uv run pytest` while passing when run alone,
+  which is the worst version of this bug — it depends on collection order. pyproject.toml predicted
+  the general case on day 5, that scripts importing each other by accident of `sys.path[0]` stop
+  working once two days share code; this is the other half of it, where two days that share nothing
+  but a *filename* collide just as hard. Renaming would have worked today and left the same trap for
+  the next `report.py`.
+- **What would change my mind.** Nothing here, but the earlier days are now inconsistent with this
+  one. Converting them is a day of churn for no new capability, so the inconsistency stands and this
+  entry is the explanation.

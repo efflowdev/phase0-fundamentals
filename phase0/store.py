@@ -4,10 +4,20 @@ The alternative was JSONL now and SQLite on Saturday, which means writing the
 schema twice and giving lens an importer on Monday. One table costs ~20 lines
 today instead.
 
+It lived in `day3_sampling/` until the weekend actually needed it, which is the
+same move `runner.py` made on day 5 and for the same reason: the second caller
+is what turns a script into a module. Day 3 imports it from here now, and the
+schema did not change.
+
 Generic enough for both days by construction: every column here is a property of
 *a model call*, not of this experiment. Anything day-specific goes in
 `extra_json` — the weekend's `valid_first_try`, `attempts` and `error_type` land
 there without a migration.
+
+`dispatch` is the one column whose *meaning* is per-experiment. Day 3 uses it for
+sequential-vs-concurrent; the weekend uses it for which attempt produced the row
+(`first`, `repair`, `control`). Both are properties of how the call was
+dispatched, and the `experiment` column keeps them from ever being compared.
 
 Raw logprobs are stored rather than computed metrics. Re-scoring is then a query,
 not a re-run, which matters the first time a scorer definition turns out to be

@@ -31,7 +31,6 @@ import sys
 import time
 
 import httpx
-import store
 from config import (
     DEFAULT_DB,
     DISPATCHES,
@@ -49,6 +48,7 @@ from config import (
 from sample import Sample, complete, probe_logprobs
 from score import tokens_to_json
 
+from phase0 import store
 from phase0.runner import run_all
 
 
