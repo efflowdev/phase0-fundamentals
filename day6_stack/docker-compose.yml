@@ -1,0 +1,112 @@
+# The stack for the next five months. Three decisions are encoded here and each
+# one is defended in the README:
+#
+#   * Ollama is NOT a default service. Docker on macOS has no Metal passthrough,
+#     so a containerised Ollama is CPU-only. The default path points the app at
+#     the host daemon; `--profile full` starts the containerised one anyway, so
+#     the repo still stands its whole stack up on a Linux clone. bench_ollama.py
+#     measures the gap.
+#   * Postgres and Qdrant both run. They answer hybrid retrieval differently and
+#     P1 compares them; two idle containers is a cheap price for that.
+#   * Every piece of state is a named volume — Postgres data, Qdrant storage,
+#     Ollama weights, the fastembed model cache. Nothing that a process
+#     downloads at runtime belongs in an image layer.
+
+name: phase0
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: phase0
+      POSTGRES_PASSWORD: phase0
+      POSTGRES_DB: phase0
+    ports:
+      # 5433 on the host: 5432 is the port a locally-installed Postgres would
+      # already hold, and discovering that clash at P1 is worse than avoiding it.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phase0 -d phase0"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    ports:
+      - "6333:6333"   # REST
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant:/qdrant/storage
+    # No healthcheck: the image ships no shell utilities to probe with. The
+    # client retries instead, which is the honest place for that logic anyway —
+    # a service being up is not the same as a service being ready to answer.
+
+  ollama:
+    profiles: ["full"]
+    image: ollama/ollama:0.5.7
+    ports:
+      # 11435, so the containerised daemon and the host daemon can run at the
+      # same time. bench_ollama.py needs exactly that to compare them.
+      - "11435:11434"
+    volumes:
+      # 2 GB of weights per model, pulled at runtime into a volume. Baking them
+      # into an image means every image push moves gigabytes of data that did
+      # not change.
+      - ollama:/root/.ollama
+
+  app:
+    build:
+      # The repo root, not this directory: pyproject.toml and uv.lock live there
+      # and the image is the package, not the day.
+      #
+      # Dockerfile.split rather than Dockerfile: same image, same 530 MB, but a
+      # source-edit rebuild is 1.0s instead of 9.3s because the virtualenv is
+      # its own cached layer. Dockerfile is kept as the measured comparison, not
+      # as a fallback. See README and docs/decisions.md.
+      context: ..
+      dockerfile: day6_stack/Dockerfile.split
+    image: phase0-app:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    environment:
+      PG_DSN: postgresql://phase0:phase0@postgres:5432/phase0
+      QDRANT_URL: http://qdrant:6333
+      # host.docker.internal is 192.168.5.2 under colima's vz networking and
+      # resolves without extra_hosts. The host daemon must be listening on
+      # 0.0.0.0 for this to connect at all — see the README.
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+    volumes:
+      - models:/models
+
+  # Same image, different entrypoint and a tunable memory ceiling. Run it with
+  # EMBED_MEM=256m to watch the kernel kill an embedding model mid-load:
+  #   EMBED_MEM=256m docker compose run --rm embed
+  embed:
+    profiles: ["jobs"]
+    image: phase0-app:local
+    build:
+      context: ..
+      dockerfile: day6_stack/Dockerfile.split
+    mem_limit: ${EMBED_MEM:-2g}
+    # Without this, the kernel spills to swap instead of killing, and the OOM
+    # never happens — it just gets slow. Equal limits force the kill.
+    memswap_limit: ${EMBED_MEM:-2g}
+    environment:
+      FASTEMBED_CACHE_PATH: /models/fastembed
+    volumes:
+      - models:/models
+    command: ["python", "day6_stack/embed_job.py", "--limit", "500"]
+
+volumes:
+  pgdata:
+  qdrant:
+  ollama:
+  models:

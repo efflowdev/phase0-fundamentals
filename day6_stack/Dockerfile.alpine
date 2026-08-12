@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.7
+#
+# THIS DOES NOT WORK. It is committed on purpose, as the reproduction for the
+# README's Alpine section — it builds green and then dies at import.
+#
+#   docker buildx build -f day6_stack/Dockerfile.alpine -t phase0-app:alpine --load .
+#   docker run --rm phase0-app:alpine python -c "import fastembed"
+#
+# Alpine is musl libc; every other image in this directory is glibc. Two
+# independent things break, and the arrangement decides which one you meet:
+#
+#   deps stage on Alpine    -> fails in 0.5s, at resolution. onnxruntime ships
+#                              manylinux wheels and no sdist, so on
+#                              musllinux_1_2_aarch64 there is nothing to install.
+#                              uv names the platform tag and lists every platform
+#                              that does have a wheel. Excellent failure.
+#
+#   runtime stage on Alpine -> what this file does. `uv sync` runs on Debian and
+#                              resolves fine, the image builds, and then a
+#                              virtualenv of glibc-linked .so files is copied
+#                              into a musl interpreter. CPython looks for
+#                              `.cpython-312-aarch64-linux-musl.so` and the file
+#                              on disk is `...-linux-gnu.so`, so the import
+#                              machinery never opens it and reports
+#                              ModuleNotFoundError for a module that is present.
+#                              Worst possible message for the actual cause.
+#
+# A third break sits in front of both: Alpine's BusyBox has `adduser`, not
+# shadow-utils' `useradd`, so the line below differs from the other Dockerfiles
+# for a reason that has nothing to do with libc. Alpine is not Debian-but-smaller.
+#
+# The conclusion is the opposite of why people reach for Alpine: it is chosen to
+# shrink images, and for the scientific Python stack it either cannot install at
+# all or produces a smaller image that cannot run. slim-bookworm is not a
+# compromise here, it is the correct base.
+
+ARG PYTHON_VERSION=3.12
+
+FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS deps
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
+
+WORKDIR /app
+
+ARG TARGETARCH
+
+# This stage never sees a .py file of ours. That is the point: there is nothing
+# a source edit could invalidate.
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv,id=uv-${TARGETARCH} \
+    uv sync --frozen --no-install-project --no-dev
+
+
+FROM python:${PYTHON_VERSION}-alpine AS runtime
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    FASTEMBED_CACHE_PATH=/models/fastembed
+
+WORKDIR /app
+
+RUN adduser -D -u 10001 app \
+    && mkdir -p /models \
+    && chown app:app /models
+
+# Big, stable, cached.
+COPY --from=deps --chown=app:app /app/.venv /app/.venv
+
+# Small, volatile, cheap to rebuild.
+COPY --chown=app:app phase0/ ./phase0/
+COPY --chown=app:app day6_stack/ ./day6_stack/
+COPY --chown=app:app day4_search/cache/ ./day4_search/cache/
+
+USER app
+
+CMD ["python", "day6_stack/healthcheck.py"]

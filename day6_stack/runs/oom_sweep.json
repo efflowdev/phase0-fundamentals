@@ -1,0 +1,86 @@
+[
+  {
+    "limit": "256m",
+    "oom_killed": true,
+    "exit_code": 137,
+    "last_line": "model loaded in 2.0s, rss 255 MB",
+    "died_during": "load"
+  },
+  {
+    "limit": "256m",
+    "oom_killed": true,
+    "exit_code": 137,
+    "last_line": "model loaded in 0.9s, rss 255 MB",
+    "died_during": "load"
+  },
+  {
+    "limit": "256m",
+    "oom_killed": true,
+    "exit_code": 137,
+    "last_line": "200/500 embedded, rss 287 MB",
+    "died_during": "batch"
+  },
+  {
+    "limit": "320m",
+    "oom_killed": false,
+    "exit_code": 0,
+    "last_line": "done: 500 vectors in 30.5s, peak rss 353 MB",
+    "died_during": null
+  },
+  {
+    "limit": "320m",
+    "oom_killed": true,
+    "exit_code": 137,
+    "last_line": "200/500 embedded, rss 300 MB",
+    "died_during": "batch"
+  },
+  {
+    "limit": "320m",
+    "oom_killed": true,
+    "exit_code": 137,
+    "last_line": "200/500 embedded, rss 303 MB",
+    "died_during": "batch"
+  },
+  {
+    "limit": "384m",
+    "oom_killed": false,
+    "exit_code": 0,
+    "last_line": "done: 500 vectors in 24.6s, peak rss 358 MB",
+    "died_during": null
+  },
+  {
+    "limit": "384m",
+    "oom_killed": false,
+    "exit_code": 0,
+    "last_line": "done: 500 vectors in 22.7s, peak rss 358 MB",
+    "died_during": null
+  },
+  {
+    "limit": "384m",
+    "oom_killed": false,
+    "exit_code": 0,
+    "last_line": "done: 500 vectors in 23.1s, peak rss 358 MB",
+    "died_during": null
+  },
+  {
+    "limit": "512m",
+    "oom_killed": false,
+    "exit_code": 0,
+    "last_line": "done: 500 vectors in 23.2s, peak rss 360 MB",
+    "died_during": null
+  },
+  {
+    "limit": "512m",
+    "oom_killed": false,
+    "exit_code": 0,
+    "last_line": "done: 500 vectors in 21.2s, peak rss 360 MB",
+    "died_during": null
+  },
+  {
+    "limit": "512m",
+    "oom_killed": false,
+    "exit_code": 0,
+    "last_line": "done: 500 vectors in 21.5s, peak rss 356 MB",
+    "died_during": null
+  }
+]

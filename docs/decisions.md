@@ -283,3 +283,68 @@ Five lines per decision: context, options considered, choice, why, what would ch
 - **What would change my mind.** Matching on message substrings is fragile regardless. Pydantic's
   `ctx` and a custom error code per validator would be sturdier, and is the right fix if this
   classifier grows past a handful of rules.
+
+---
+
+## Ollama runs on the host; the container is opt-in behind a profile
+
+- **Context.** Day 6 stands up a compose stack, and the phase-0 done bar asks for Postgres, Qdrant
+  and Ollama from one command. Docker on macOS runs a Linux VM with no path to the Metal GPU.
+- **Options.** Ollama as a default compose service; on the host only; on the host by default with a
+  containerised service behind a compose profile.
+- **Choice.** Host by default, `--profile full` for the containerised one, both measured.
+- **Why.** A containerised Ollama on this machine is CPU-only, and the gap is 4.02x — 54.0 tok/s
+  against 13.4 on identical weights. Every later day's model calls would pay that. The profile keeps
+  the stack complete for anyone cloning it onto Linux, and running both at once is what let the
+  number be measured rather than assumed. The literal done bar therefore needs the flag, which is
+  stated in the README rather than quietly ignored.
+- **What would change my mind.** A Linux host with an NVIDIA GPU, where `nvidia-container-toolkit`
+  and `--gpus all` put the accelerator inside the container and the reason for the split disappears.
+
+---
+
+## Postgres+pgvector and Qdrant both run, from the start
+
+- **Context.** P1 is hybrid retrieval, and these two answer it differently. Day 4 already showed
+  dense losing to BM25 by 1.000 to 0.006 on identifier queries, so P1 needs both halves.
+- **Options.** pgvector only; Qdrant only; both.
+- **Why.** Postgres does lexical and vector in one engine with no cross-store join; Qdrant has the
+  better ANN implementation and filters during search rather than after it. Which of those matters
+  more at 500k products is the question P1 answers, and it cannot be answered by whichever one got
+  installed. Idle cost is roughly 30 MB and 150 MB, which is not a reason to prejudge it.
+- **Choice.** Both, as default services.
+- **What would change my mind.** P1 finding pgvector's HNSW sufficient at the real corpus size — at
+  which point the second store is complexity kept for its own sake, and the honest move is to drop
+  it and say why.
+
+---
+
+## The virtualenv is copied as its own layer, and the package is not installed
+
+- **Context.** The textbook multi-stage build ends `COPY --from=builder /app /app`. `docker history`
+  shows that is a single 244 MB layer holding the virtualenv and the source together.
+- **Options.** Keep the textbook build; copy the venv and the source as separate layers, with the
+  package on PYTHONPATH rather than installed.
+- **Choice.** Separate layers. `docker-compose.yml` builds `Dockerfile.split`; `Dockerfile` stays in
+  the repo as the measured comparison.
+- **Why.** A one-line source edit rebuilds in 1.0s instead of 9.3s, because the venv layer is
+  byte-identical across source edits and stays cached. Layer ordering alone did not deliver this —
+  it saved the dependency resolution and then handed the saving back at the stage boundary, which is
+  the part the usual advice leaves out. The images are identical in size, 530 MB unpacked.
+- **What would change my mind.** `phase0` gaining a console entry point or calling
+  `importlib.metadata` — it is on PYTHONPATH here, so it has no distribution metadata in the image.
+  There is a live seam in that the package is installed locally and not in the image, and a test
+  that passes under `uv run` could still fail in the container.
+
+---
+
+## Qdrant is spoken to over REST, not through qdrant-client
+
+- **Context.** The healthcheck creates a collection, upserts points and runs a filtered search.
+- **Options.** `qdrant-client`; raw REST through the httpx client already in the tree.
+- **Choice.** REST.
+- **Why.** Phase 0's rule is to meet the protocol before the SDK, and the surface used here is three
+  endpoints. The client also pulls in grpcio, which is one of the heavier wheels to resolve for a
+  second architecture — a cost paid on every cross-arch build for convenience not yet needed.
+- **What would change my mind.** P1, where batch upserts of 500k vectors want the client's batching
+  and retry behaviour rather than a hand-rolled version of it.

@@ -1,0 +1,122 @@
+{
+  "results": [
+    {
+      "scenario": "cold",
+      "dockerfile": "naive",
+      "seconds": 21.9,
+      "note": ""
+    },
+    {
+      "scenario": "noop",
+      "dockerfile": "naive",
+      "seconds": 1.2,
+      "note": ""
+    },
+    {
+      "scenario": "source_change",
+      "dockerfile": "naive",
+      "seconds": 17.8,
+      "note": ""
+    },
+    {
+      "scenario": "deps_change",
+      "dockerfile": "naive",
+      "seconds": 17.4,
+      "note": ""
+    },
+    {
+      "scenario": "no_layer_cache",
+      "dockerfile": "naive",
+      "seconds": 18.2,
+      "note": "vs `cold`: what the cache mount is worth (naive has none)"
+    },
+    {
+      "scenario": "cold",
+      "dockerfile": "multi",
+      "seconds": 17.2,
+      "note": ""
+    },
+    {
+      "scenario": "noop",
+      "dockerfile": "multi",
+      "seconds": 1.1,
+      "note": ""
+    },
+    {
+      "scenario": "source_change",
+      "dockerfile": "multi",
+      "seconds": 9.3,
+      "note": ""
+    },
+    {
+      "scenario": "deps_change",
+      "dockerfile": "multi",
+      "seconds": 12.1,
+      "note": ""
+    },
+    {
+      "scenario": "no_layer_cache",
+      "dockerfile": "multi",
+      "seconds": 14.1,
+      "note": "vs `cold`: what the cache mount is worth (naive has none)"
+    },
+    {
+      "scenario": "cold",
+      "dockerfile": "split",
+      "seconds": 14.6,
+      "note": ""
+    },
+    {
+      "scenario": "noop",
+      "dockerfile": "split",
+      "seconds": 1.2,
+      "note": ""
+    },
+    {
+      "scenario": "source_change",
+      "dockerfile": "split",
+      "seconds": 1.0,
+      "note": ""
+    },
+    {
+      "scenario": "deps_change",
+      "dockerfile": "split",
+      "seconds": 10.3,
+      "note": ""
+    },
+    {
+      "scenario": "no_layer_cache",
+      "dockerfile": "split",
+      "seconds": 11.8,
+      "note": "vs `cold`: what the cache mount is worth (naive has none)"
+    },
+    {
+      "scenario": "crossarch_amd64",
+      "dockerfile": "split",
+      "seconds": 21.1,
+      "note": ""
+    }
+  ],
+  "image_size_mb": {
+    "naive": {
+      "content_mb": 195.8,
+      "unpacked_mb": 875.0
+    },
+    "multi": {
+      "content_mb": 113.9,
+      "unpacked_mb": 530.0
+    },
+    "split": {
+      "content_mb": 113.9,
+      "unpacked_mb": 530.0
+    }
+  },
+  "context_mb": {
+    "on_disk": 260.3,
+    "tracked": 4.2
+  },
+  "crossarch": {
+    "ok": true,
+    "seconds": 21.1
+  }
+}

@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1.7
+#
+# The fix for what the measurement actually found.
+#
+# Dockerfile (multi-stage) does the textbook thing: build everything in a
+# builder stage, then `COPY --from=builder /app /app`. `docker history` shows
+# what that produces — ONE 244 MB layer containing the virtualenv AND the
+# source. Editing one line of Python invalidates it, so every source rebuild
+# re-copies a quarter of a gigabyte to move six kilobytes of changed code.
+# The layer-ordering trick saved the dependency *resolution* and then handed the
+# saving straight back at the stage boundary.
+#
+# So the runtime image is assembled from two sources instead of one:
+#
+#   * the virtualenv, from a builder that only ever sees pyproject.toml and
+#     uv.lock — so its layer is byte-identical across every source edit and
+#     stays cached
+#   * the source, copied from the build context directly, as its own small layer
+#
+# The cost: `phase0` is on PYTHONPATH rather than installed into site-packages,
+# so it has no distribution metadata in the image. Nothing here needs it —
+# nothing calls importlib.metadata and there are no entry points — but that is a
+# property to re-check before this pattern goes near a package that does.
+
+ARG PYTHON_VERSION=3.12
+
+FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS deps
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
+
+WORKDIR /app
+
+ARG TARGETARCH
+
+# This stage never sees a .py file of ours. That is the point: there is nothing
+# a source edit could invalidate.
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv,id=uv-${TARGETARCH} \
+    uv sync --frozen --no-install-project --no-dev
+
+
+FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    FASTEMBED_CACHE_PATH=/models/fastembed
+
+WORKDIR /app
+
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /models \
+    && chown app:app /models
+
+# Big, stable, cached.
+COPY --from=deps --chown=app:app /app/.venv /app/.venv
+
+# Small, volatile, cheap to rebuild.
+COPY --chown=app:app phase0/ ./phase0/
+COPY --chown=app:app day6_stack/ ./day6_stack/
+COPY --chown=app:app day4_search/cache/ ./day4_search/cache/
+
+USER app
+
+CMD ["python", "day6_stack/healthcheck.py"]

@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1.7
+#
+# The control, not a straw man. This is what the same application looks like
+# written the way a working Dockerfile is usually written: one stage, source
+# copied first, no cache mount. It produces a correct image. It is only wrong
+# on the two axes this day measures — size, and rebuild time after a code edit.
+#
+# Build it with day6_stack/measure.py, which reports both numbers against the
+# multi-stage version.
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# Not "naive" — these are the control. Both other Dockerfiles set them, and
+# bytecode compilation of numpy + onnxruntime is measured in seconds, so leaving
+# it out here would have flattered them by handing this one less work to do.
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+WORKDIR /app
+
+# Source before dependencies. Every source edit invalidates this COPY, and
+# therefore the uv sync below it, and therefore re-resolves and re-downloads
+# the entire dependency tree.
+COPY . .
+
+RUN uv sync --frozen --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    FASTEMBED_CACHE_PATH=/models/fastembed
+
+CMD ["python", "day6_stack/healthcheck.py"]

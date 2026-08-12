@@ -1,0 +1,23 @@
+# Build context, not build inputs. Everything here is either large, secret, or
+# regenerated inside the image — and context is uploaded to the daemon on every
+# single build, before any layer cache is consulted, so an unignored .venv makes
+# even a fully-cached build slow.
+.git
+.env
+
+**/.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+**/node_modules
+
+# Derived artefacts. day4_search/cache/ is deliberately NOT here — the ESCI JSONL
+# is committed input data and the embedding job in this day reads it.
+day4_search/index
+day3_sampling/runs
+day5_async/runs
+day6_stack/runs
+*.db
+*.db-wal
+*.db-shm

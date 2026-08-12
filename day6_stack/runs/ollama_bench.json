@@ -1,0 +1,25 @@
+{
+  "model": "llama3.2",
+  "num_predict": 160,
+  "host_metal": {
+    "endpoint": "http://localhost:11434",
+    "runs": 15,
+    "warmup_load_s": 0.21,
+    "eval_tokens": 135,
+    "tokens_per_s_median": 54.04,
+    "tokens_per_s_min": 30.38,
+    "tokens_per_s_max": 55.31,
+    "wall_s_median": 2.68
+  },
+  "container_cpu": {
+    "endpoint": "http://localhost:11435",
+    "runs": 15,
+    "warmup_load_s": 0.02,
+    "eval_tokens": 159,
+    "tokens_per_s_median": 13.44,
+    "tokens_per_s_min": 8.81,
+    "tokens_per_s_max": 14.95,
+    "wall_s_median": 11.93
+  },
+  "metal_speedup": 4.02
+}

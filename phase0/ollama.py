@@ -16,11 +16,16 @@ size", because those are not expressible as a grammar.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
 
-URL = "http://localhost:11434/api/chat"
+# Read from the environment because day 6 moves the caller into a container,
+# where `localhost` is the container itself and the daemon is a network hop away
+# at host.docker.internal. Default unchanged, so nothing outside Docker notices.
+BASE_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+URL = f"{BASE_URL}/api/chat"
 MODEL = "llama3.2"
 TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=10.0)
 
